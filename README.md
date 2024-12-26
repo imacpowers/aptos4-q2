@@ -94,7 +94,7 @@ Create a stunning display of your NFTs
 ### Frontend
 - **Framework**: React.js
 - **3D Rendering**: Three.js for the Showcase feature
-- **Styling**: Tailwind CSS for modern and responsive design
+- **Styling**: CSS for modern and responsive design
 
 ### Backend
 - **Blockchain**: Aptos for NFT transactions and wallet integration
