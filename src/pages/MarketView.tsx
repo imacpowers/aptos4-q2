@@ -1,25 +1,16 @@
-import React, { useState } from "react";
-import { Typography, Card, Row, Col, Tag, Button, Modal } from "antd";
+import React, { useState, useEffect } from "react";
+import { Typography, Radio, message, Card, Row, Col, Pagination, Tag, Button, Modal, Input } from "antd";
+import { AptosClient } from "aptos";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { debounce, deburr } from 'lodash';
+import { Translatable } from '../components/translation/Translatable';
 
 const { Title } = Typography;
 const { Meta } = Card;
+const { Search } = Input;
 
-// Define colors and labels for rarity
-const rarityColors: { [key: number]: string } = {
-  1: "green",
-  2: "blue",
-  3: "purple",
-  4: "orange",
-};
+const client = new AptosClient("https://fullnode.testnet.aptoslabs.com/v1");
 
-const rarityLabels: { [key: number]: string } = {
-  1: "Common",
-  2: "Uncommon",
-  3: "Rare",
-  4: "Super Rare",
-};
-
-// Define NFT type
 type NFT = {
   id: number;
   owner: string;
@@ -29,87 +20,320 @@ type NFT = {
   price: number;
   for_sale: boolean;
   rarity: number;
+  is_auction: boolean;
+  auction_end: number | null;
+  highest_bid: number | null;
+  highest_bidder: string | null;
 };
 
-// Truncate address helper function
-const truncateAddress = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
+interface MarketViewProps {
+  marketplaceAddr: string;
+}
 
-const MarketView: React.FC = () => {
-  // State for buy modal visibility and selected NFT
-  const [isBuyModalVisible, setIsBuyModalVisible] = useState(false);
+const rarityColors: { [key: number]: string } = {
+  1: "green",
+  2: "blue", 
+  3: "purple",
+  4: "orange",
+};
+
+const rarityLabels: { [key: number]: string } = {
+  1: "Common",
+  2: "Uncommon",
+  3: "Rare", 
+  4: "Super Rare",
+};
+
+const truncateAddress = (address: string, start = 6, end = 4) => {
+  return `${address.slice(0, start)}...${address.slice(-end)}`;
+};
+
+const calculateSearchScore = (searchTerm: string, nft: NFT): number => {
+  const normalizedSearch = deburr(searchTerm.toLowerCase());
+  const normalizedName = deburr(nft.name.toLowerCase());
+  const normalizedDesc = deburr(nft.description.toLowerCase());
+  
+  let score = 0;
+  
+  // Exact matches in name are weighted highest
+  if (normalizedName.includes(normalizedSearch)) {
+    score += 3;
+  }
+  
+  // Word-by-word matches in name
+  const searchWords = normalizedSearch.split(/\s+/);
+  const nameWords = normalizedName.split(/\s+/);
+  const descWords = normalizedDesc.split(/\s+/);
+  
+  searchWords.forEach(word => {
+    // Name word matches
+    nameWords.forEach(nameWord => {
+      if (nameWord.includes(word)) score += 2;
+      if (word.includes(nameWord)) score += 1;
+    });
+    
+    // Description word matches
+    descWords.forEach(descWord => {
+      if (descWord.includes(word)) score += 1;
+      if (word.includes(descWord)) score += 0.5;
+    });
+  });
+  
+  return score;
+};
+
+const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
+  const { signAndSubmitTransaction } = useWallet();
+  const [allNfts, setAllNfts] = useState<NFT[]>([]);
+  const [displayedNfts, setDisplayedNfts] = useState<NFT[]>([]);
+  const [rarity, setRarity] = useState<'all' | number>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedNft, setSelectedNft] = useState<NFT | null>(null);
+  const [price, setPrice] = useState<string>("");
+  const pageSize = 8;
 
-  // Mock NFTs for display
-  const mockNfts: NFT[] = [
-    { id: 1, owner: "0x123...abc", name: "NFT 1", description: "An awesome NFT", uri: "https://fastly.picsum.photos/id/802/200/200.jpg?hmac=alfo3M8Ps4XWmFJGIwuzLUqOrwxqkE5_f65vCtk6_Iw", price: 1.5, for_sale: true, rarity: 1 },
-    { id: 2, owner: "0x456...def", name: "NFT 2", description: "Another great NFT", uri: "https://fastly.picsum.photos/id/186/200/200.jpg?hmac=bNtKzMZT8HFzZq8mbTSWaQvmkX8T7TE47fspKMfxVl8", price: 2.0, for_sale: true, rarity: 2 },
-    { id: 2, owner: "0x456...def", name: "NFT 3", description: "Another great NFT", uri: "https://fastly.picsum.photos/id/255/200/200.jpg?hmac=IYQV36UT5-F1dbK_CQXF7PDfLfwcnwKijqeBCo3yMlc", price: 2.0, for_sale: true, rarity: 2 },
-    { id: 2, owner: "0x456...def", name: "NFT 4", description: "Another great NFT", uri: "https://fastly.picsum.photos/id/522/200/200.jpg?hmac=-4K81k9CA5C9S2DWiH5kP8rMvaAPk2LByYZHP9ejTjA", price: 2.0, for_sale: true, rarity: 2 },
-    { id: 2, owner: "0x456...def", name: "NFT 5", description: "Another great NFT", uri: "https://fastly.picsum.photos/id/501/200/200.jpg?hmac=tKXe69j4tHhkAA_Qc3XinkTuubEWwkFVhA9TR4TmCG8", price: 2.0, for_sale: true, rarity: 2 },
-    { id: 2, owner: "0x456...def", name: "NFT 6", description: "Another great NFT", uri: "https://fastly.picsum.photos/id/68/200/200.jpg?hmac=CPg7ZGK1PBwt6DmjjPRApX_t-mOiYxt0pel50VH4Gwk", price: 2.0, for_sale: true, rarity: 2 },
-    { id: 2, owner: "0x456...def", name: "NFT 7", description: "Another great NFT", uri: "https://fastly.picsum.photos/id/891/200/200.jpg?hmac=J19K6yDbzNDUjkInb56-h-n_xM3i40GCfHWor0YKgyU", price: 2.0, for_sale: true, rarity: 2 },
-    { id: 2, owner: "0x456...def", name: "NFT 8", description: "Another great NFT", uri: "https://fastly.picsum.photos/id/999/200/200.jpg?hmac=iwXALEStJtHL4Thxk_YbLNHNmjq9ZrIQYFUvtxndOaU", price: 2.0, for_sale: true, rarity: 2 },
-  ];
-
-  const handleBuyClick = (nft: NFT) => {
-    setSelectedNft(nft);
-    setIsBuyModalVisible(true);
+  const calculateTimeRemaining = (auctionEnd: number | null): string => {
+    if (!auctionEnd) return "N/A";
+    
+    const endTime = new Date(auctionEnd * 1000);
+    const now = new Date();
+    
+    if (now > endTime) return "Auction Ended";
+    
+    const diff = endTime.getTime() - now.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    return `${days}d ${hours}h ${minutes}m`;
   };
 
-  const handleCancelBuy = () => {
-    setIsBuyModalVisible(false);
-    setSelectedNft(null);
+  const debouncedSearch = debounce((nfts: NFT[], term: string, selectedRarity?: number) => {
+    let filtered = nfts.filter(nft => nft.for_sale);
+
+    if (typeof selectedRarity === 'number') {
+      filtered = filtered.filter(nft => nft.rarity === selectedRarity);
+    }
+
+    if (term.trim()) {
+      filtered = filtered
+        .map(nft => ({
+          ...nft,
+          searchScore: calculateSearchScore(term, nft)
+        }))
+        .filter(nft => nft.searchScore > 0)
+        .sort((a, b) => (b.searchScore || 0) - (a.searchScore || 0))
+        .map(({ searchScore, ...nft }) => nft);
+    }
+
+    setDisplayedNfts(filtered);
+    setCurrentPage(1);
+  }, 300);
+
+  useEffect(() => {
+    handleFetchNfts();
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, []);
+
+  useEffect(() => {
+    debouncedSearch(allNfts, searchTerm, rarity === 'all' ? undefined : rarity);
+  }, [rarity, searchTerm, allNfts]);
+
+  const handleFetchNfts = async () => {
+    try {
+      const response = await client.getAccountResource(
+        marketplaceAddr,
+        "0xf87c7acfed155f11fae502d5d3c2f2a8bda1c96d89cfd0252bca321fa0cc5402::NFTMarketplace::Marketplace"
+      );
+      const nftList = (response.data as { nfts: NFT[] }).nfts;
+
+      const hexToUint8Array = (hexString: string): Uint8Array => {
+        const bytes = new Uint8Array(hexString.length / 2);
+        for (let i = 0; i < hexString.length; i += 2) {
+          bytes[i / 2] = parseInt(hexString.substr(i, 2), 16);
+        }
+        return bytes;
+      };
+
+      const decodedNfts = nftList.map((nft) => ({
+        ...nft,
+        name: new TextDecoder().decode(hexToUint8Array(nft.name.slice(2))),
+        description: new TextDecoder().decode(hexToUint8Array(nft.description.slice(2))),
+        uri: new TextDecoder().decode(hexToUint8Array(nft.uri.slice(2))),
+        price: nft.price / 100000000,
+        highest_bid: nft.highest_bid ? nft.highest_bid / 100000000 : null,
+      }));
+
+      setAllNfts(decodedNfts);
+    } catch (error) {
+      console.error("Error fetching NFTs:", error);
+      message.error("Failed to fetch NFTs.");
+    }
   };
+
+  const handleTransaction = async () => {
+    if (!selectedNft ) {
+      message.error(<Translatable>"Please enter a valid amount."</Translatable>);
+      return;
+    }
+
+    const priceInOctas = parseFloat(price) * 100000000;
+
+    // if (isNaN(priceInOctas) || priceInOctas <= 0) {
+    //   message.error(<Translatable>"Invalid amount entered."</Translatable>);
+    //   return;
+    // }
+
+    try {
+      const entryFunctionPayload = {
+        type: "entry_function_payload",
+        function: selectedNft.is_auction 
+          ? `${marketplaceAddr}::NFTMarketplace::place_bid`
+          : `${marketplaceAddr}::NFTMarketplace::purchase_nft`,
+        type_arguments: [],
+        arguments: selectedNft.is_auction
+          ? [marketplaceAddr, selectedNft.id.toString(), priceInOctas.toString()]
+          : [marketplaceAddr, selectedNft.id.toString()],
+      };
+
+      const response = await (window as any).aptos.signAndSubmitTransaction(entryFunctionPayload);
+      await client.waitForTransaction(response.hash);
+
+      message.success(selectedNft.is_auction ? "Bid placed successfully!" : "NFT purchased successfully!");
+      setIsModalVisible(false);
+      handleFetchNfts();
+    } catch (error) {
+      console.error(selectedNft.is_auction ? "Error placing bid:" : "Error purchasing NFT:", error);
+      message.error(selectedNft.is_auction ? "Failed to place bid." : "Failed to purchase NFT.");
+    }
+  };
+
+  const paginatedNfts = displayedNfts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <Title level={2} style={{ marginBottom: "20px" }}>Marketplace</Title>
-      <Row gutter={[24, 24]} style={{ marginTop: 20, marginBottom: 400, width: "100%", display: "flex", justifyContent: "center", flexWrap: "wrap" }}>
-        {mockNfts.map((nft) => (
-          <Col
-            key={nft.id}
-            xs={24} sm={12} md={8} lg={6} xl={6}
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
+      <Title level={2} style={{ marginBottom: "20px" }}><Translatable>NFT Marketplace</Translatable></Title>
+
+      <Search
+        placeholder="Search NFTs by name or description"
+        onChange={(e) => setSearchTerm(e.target.value)}
+        style={{ width: 300, marginBottom: "20px" }}
+        allowClear
+      />
+
+      <div style={{ marginBottom: "20px" }}>
+        <Radio.Group
+          value={rarity}
+          onChange={(e) => setRarity(e.target.value)}
+          buttonStyle="solid"
+        >
+          <Radio.Button value="all"><Translatable>All</Translatable></Radio.Button>
+          <Radio.Button value={1}><Translatable>Common</Translatable></Radio.Button>
+          <Radio.Button value={2}><Translatable>Uncommon</Translatable></Radio.Button>
+          <Radio.Button value={3}><Translatable>Rare</Translatable></Radio.Button>
+          <Radio.Button value={4}><Translatable>Super Rare</Translatable></Radio.Button>
+        </Radio.Group>
+      </div>
+
+      <div style={{ marginBottom: "20px" }}>
+        <Typography.Text>
+          Showing {displayedNfts.length} {displayedNfts.length === 1 ? 'NFT' : 'NFTs'} for sale
+        </Typography.Text>
+      </div>
+
+      <Row gutter={[24, 24]} style={{ marginTop: 20, width: "100%", justifyContent: "center", flexWrap: "wrap" }}>
+        {paginatedNfts.map((nft) => (
+          <Col key={nft.id} xs={24} sm={12} md={8} lg={6} xl={6}>
             <Card
               hoverable
-              style={{
-                width: "100%",
-                maxWidth: "240px",
-                margin: "0 auto",
-              }}
+              style={{ width: "100%", maxWidth: "240px", margin: "0 auto" }}
               cover={<img alt={nft.name} src={nft.uri} />}
               actions={[
-                <Button type="link" onClick={() => handleBuyClick(nft)}>
-                  Buy
-                </Button>
+                <Button 
+                  type="link" 
+                  onClick={() => {
+                    setSelectedNft(nft);
+                    setIsModalVisible(true);
+                  }}
+                >
+                  {nft.is_auction ? "Place Bid" : "Buy Now"}
+                </Button>,
               ]}
             >
-              <Tag
-                color={rarityColors[nft.rarity]}
-                style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "10px" }}
-              >
-                {rarityLabels[nft.rarity]}
-              </Tag>
-              <Meta title={nft.name} description={`Price: ${nft.price} APT`} />
+              <Tag color={rarityColors[nft.rarity]}>{rarityLabels[nft.rarity]}</Tag>
+              <Meta 
+                title={nft.name} 
+                description={`Price: ${nft.price} APT`} 
+              />
               <p>{nft.description}</p>
-              <p>ID: {nft.id}</p>
-              <p>Owner: {truncateAddress(nft.owner)}</p>
+              
+              {nft.is_auction ? (
+                <div>
+                  <p>
+                    <strong>Highest Bid:</strong> {nft.highest_bid ? `${nft.highest_bid} APT` : "No bids yet"}
+                  </p>
+                  <p>
+                    <strong>Highest Bidder:</strong> {nft.highest_bidder ? truncateAddress(nft.highest_bidder) : "N/A"}
+                  </p>
+                  <p>
+                    <strong>Time Left:</strong> {calculateTimeRemaining(nft.auction_end)}
+                  </p>
+                </div>
+              ) : (
+                <p><strong><Translatable>Immediate Purchase Available</Translatable></strong></p>
+              )}
             </Card>
           </Col>
         ))}
       </Row>
 
-      <Modal title="Purchase NFT" visible={isBuyModalVisible} onCancel={handleCancelBuy} footer={null}>
+      <Pagination 
+        current={currentPage} 
+        pageSize={pageSize} 
+        total={displayedNfts.length} 
+        onChange={setCurrentPage}
+        style={{ marginTop: "20px" }}
+      />
+
+      <Modal
+        title={selectedNft?.is_auction ? "Place a Bid" : <Translatable>"Purchase NFT"</Translatable>}
+        visible={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setIsModalVisible(false)}><Translatable>Cancel</Translatable></Button>,
+          <Button key="confirm" type="primary" onClick={handleTransaction}>
+            {selectedNft?.is_auction ? "Place Bid" : <Translatable>"Buy Now"</Translatable>}
+          </Button>,
+        ]}
+      >
         {selectedNft && (
           <>
-            <p><strong>Name:</strong> {selectedNft.name}</p>
-            <p><strong>Description:</strong> {selectedNft.description}</p>
-            <p><strong>Price:</strong> {selectedNft.price} APT</p>
+            <p><strong><Translatable>NFT ID:</Translatable></strong> {selectedNft.id}</p>
+            <p><strong><Translatable>Name:</Translatable></strong> {selectedNft.name}</p>
+            <p><strong><Translatable>Description:</Translatable></strong> {selectedNft.description}</p>
+            
+            {selectedNft.is_auction ? (
+              <>
+                <p><strong>Current Highest Bid:</strong> {selectedNft.highest_bid || "No bids yet"}</p>
+                <p><strong>Time Left:</strong> {calculateTimeRemaining(selectedNft.auction_end)}</p>
+                <Input
+                  type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="Enter your bid amount"
+                  min={selectedNft.highest_bid ? selectedNft.highest_bid + 0.1 : selectedNft.price}
+                />
+              </>
+            ) : (
+              <>
+                <p><strong><Translatable>Price:</Translatable></strong> {selectedNft.price} APT</p>
+                <p><Translatable>Are you sure you want to purchase this NFT?</Translatable></p>
+              </>
+            )}
           </>
         )}
       </Modal>
