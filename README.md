@@ -13,24 +13,29 @@ Effortlessly find NFTs using our advanced search tools:
 - **Keyword Search**: Filter NFTs by name, description, or metadata.
 - **Dynamic Updates**: Search results update in real-time as you type.
 
-### 2. **NFT Transfer**
+### 2. **Any User Can Mint NFTs**
+Empower users to create their own NFTs, not just the marketplace owner:
+- **Easy Minting Process**: Upload an image or file, add metadata (title, description, etc.), and mint your NFT in just a few steps.
+- **Aptos Blockchain**: NFTs are minted directly on the Aptos blockchain for secure ownership.
+
+### 3. **NFT Transfer**
 Transfer your NFTs securely and conveniently:
 - **Wallet Integration**: Supports all Aptos-compatible wallets.
 - **Intuitive Process**: Enter the recipient’s wallet address, select your NFT, and confirm the transfer.
 - **Real-Time Confirmation**: Stay informed about the status of your transaction.
 
-### 3. **Translation**
+### 4. **Translation**
 Make the marketplace accessible to a global audience:
 - **Multi-Language Support**: Includes translations for major languages worldwide.
 - **Dynamic Updates**: Switch languages seamlessly without refreshing the page.
 - **Powered by AI**: Backed by Google Generative AI for accurate and context-aware translations.
 
-### 4. **Analytics Dashboard**
+### 5. **Analytics Dashboard**
 Gain insights and track your activity:
 - **Marketplace Trends**: Analyze sales volume, popular NFTs, and market trends.
 - **Personalized Insights**: View your purchase history, sales, and transfer details.
 
-### 5. **Showcase Feature (Powered by Three.js)**
+### 6. **Showcase Feature (Powered by Three.js)**
 Create a stunning display of your NFTs 
 - **3D Visualization**: Leverage **Three.js** to render NFTs in immersive, high-quality 3D..
 - **Shareable Profiles**: Generate links to share your showcase with others.
